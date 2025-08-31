@@ -1,4 +1,5 @@
 import csv
+import re  # 추가: 정규표현식 모듈
 from konlpy.tag import Okt
 import pandas as pd
 from mysql.connector import pooling
@@ -136,9 +137,30 @@ def DTM(csv_path, stopwords_set):
 
     return word_df
 
-def find_over_threshold_words(word_df, idea_df_dict, score_threshold=4, frequency_threshold=20):
-    """특정 점수 이상의 단어 찾기"""
+def check_essential_words(idea_text, essential_words):
+    """필수 단어 확인 함수"""
+    found_categories = []
+    missing_categories = []
+    
+    for category, synonyms in essential_words.items():
+        found = False
+        for synonym in synonyms:
+            if synonym in idea_text:
+                found = True
+                break
+        
+        if found:
+            found_categories.append(category)
+        else:
+            missing_categories.append(category)
+    
+    return found_categories, missing_categories
+
+def find_over_threshold_words(word_df, idea_df_dict, essential_words, score_threshold=4, frequency_threshold=20):
+    """특정 점수 이상의 단어 찾고 필수 단어 확인"""
     filtered_ideas = []
+    qualified_ideas = []  # 필수 단어를 모두 포함한 아이디어들
+    
     for idx, row in idea_df_dict.iterrows():
         score = 0
         for morph in row['idea_morphs']:
@@ -146,10 +168,41 @@ def find_over_threshold_words(word_df, idea_df_dict, score_threshold=4, frequenc
                 word_index = word_df[word_df['word'] == morph].index[0]
                 if word_df.at[word_index, 'count'] > frequency_threshold:
                     score += 1
+        
         if score > score_threshold:
-            filtered_ideas.append((row['idea'], score))
-            print(" score = ", score, "아이디어: ", row['idea'])
-    return filtered_ideas
+            idea_text = row['idea']
+            found_categories, missing_categories = check_essential_words(idea_text, essential_words)
+            
+            result = {
+                'idea': idea_text,
+                'score': score,
+                'found_categories': found_categories,
+                'missing_categories': missing_categories,
+                'has_all_essential': len(missing_categories) == 0
+            }
+            
+            filtered_ideas.append(result)
+            
+            print(f" score = {score}, 아이디어: {idea_text}")
+            print(f" 포함된 필수 단어: {found_categories}")
+            print(f" 누락된 필수 단어: {missing_categories}")
+            
+            # 모든 필수 단어가 포함된 경우
+            if len(missing_categories) == 0:
+                qualified_ideas.append(result)
+                print(" ✅ 모든 필수 단어 포함!")
+            print("-" * 50)
+    
+    return filtered_ideas, qualified_ideas
+
+essential_words = {
+    '1':["1","하나","일","한"],
+    '10':["10","열","십"],
+    '더하기': ["더하기","더한","더하","+","합","덧셈","더해"],
+    '누적':["누적","모두","전부","합계"],
+    '반복':["반복","까지","번"],
+    '출력':["출력","보여","표시","나타","출력해","출력하"]
+}
 
 if __name__ == "__main__":
     csv_path = r'c:\Users\jeayy\Desktop\NLP\find_idea_similarity\DTM(Document-Term Matrix)\coala_ai_response_30013_ML.csv'
@@ -165,11 +218,30 @@ if __name__ == "__main__":
     idea_df_dict = pd.DataFrame(idea_df_dict) 
     
     word_df = pd.read_csv(r'c:\Users\jeayy\Desktop\NLP\find_idea_similarity\DTM(Document-Term Matrix)\30013_word_frequency_table.csv', encoding='utf-8-sig')
-
-    word_df = pd.DataFrame(word_df)
     
     idea_df_dict['score'] = 0
     
-    over_score_ideas=find_over_threshold_words(word_df, idea_df_dict, score_threshold=4, frequency_threshold=30)
-    print("최종 결과: ", over_score_ideas)
+    # 필수 단어 확인과 함께 점수 계산
+    over_score_ideas, qualified_ideas = find_over_threshold_words(
+        word_df, idea_df_dict, essential_words, 
+        score_threshold=4, frequency_threshold=30
+    )
     
+    print("\n" + "="*60)
+    print("🎯 모든 필수 단어를 포함한 우수 아이디어들:")
+    print("="*60)
+    
+    if qualified_ideas:
+        for result in qualified_ideas:
+            print(f"📝 아이디어: {result['idea']}")
+            print(f"📊 점수: {result['score']}")
+            print(f"✅ 포함 단어: {result['found_categories']}")
+            print("-" * 40)
+    else:
+        print("❌ 모든 필수 단어를 포함한 아이디어가 없습니다.")
+        print("\n📋 부분적으로 조건을 만족하는 아이디어들:")
+        for result in over_score_ideas:
+            print(f"아이디어: {result['idea']}")
+            print(f"점수: {result['score']}, 누락: {result['missing_categories']}")
+    
+    print(f"\n📈 전체 결과: 기준 점수 이상 {len(over_score_ideas)}개, 완전 조건 만족 {len(qualified_ideas)}개")
