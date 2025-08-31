@@ -123,8 +123,8 @@ def DTM(csv_path, stopwords_set):
         row['idea_morphs'] = filtered_morphs  # 수정: 컬럼명 오타 수정
         build_bag_of_words(filtered_morphs)
         
-    print(word_to_index)
-    print(bow)
+    # print(word_to_index)  # 주석 처리
+    # print(bow)  # 주석 처리
 
     word_df = pd.DataFrame({
         'word': list(word_to_index.keys()),
@@ -183,15 +183,9 @@ def find_over_threshold_words(word_df, idea_df_dict, essential_words, score_thre
             
             filtered_ideas.append(result)
             
-            print(f" score = {score}, 아이디어: {idea_text}")
-            print(f" 포함된 필수 단어: {found_categories}")
-            print(f" 누락된 필수 단어: {missing_categories}")
-            
-            # 모든 필수 단어가 포함된 경우
+            # 모든 필수 단어가 포함된 경우만 qualified_ideas에 추가
             if len(missing_categories) == 0:
                 qualified_ideas.append(result)
-                print(" ✅ 모든 필수 단어 포함!")
-            print("-" * 50)
     
     return filtered_ideas, qualified_ideas
 
@@ -199,7 +193,7 @@ essential_words = {
     '1':["1","하나","일","한"],
     '10':["10","열","십"],
     '더하기': ["더하기","더한","더하","+","합","덧셈","더해"],
-    '누적':["누적","모두","전부","합계"],
+    '누적':["누적","모두","전부","합계","전체","총"],
     '반복':["반복","까지","번"],
     '출력':["출력","보여","표시","나타","출력해","출력하"]
 }
@@ -227,21 +221,13 @@ if __name__ == "__main__":
         score_threshold=4, frequency_threshold=30
     )
     
-    print("\n" + "="*60)
-    print("🎯 모든 필수 단어를 포함한 우수 아이디어들:")
-    print("="*60)
+    print("\n 모든 필수 단어를 포함한 우수 아이디어들:")
+    print("="*50)
     
     if qualified_ideas:
-        for result in qualified_ideas:
-            print(f"📝 아이디어: {result['idea']}")
-            print(f"📊 점수: {result['score']}")
-            print(f"✅ 포함 단어: {result['found_categories']}")
-            print("-" * 40)
+        for i, result in enumerate(qualified_ideas, 1):
+            print(f"{i}. {result['idea']}")
+        print(f"\n 총 {len(qualified_ideas)}개의 완벽한 아이디어를 찾았습니다.")
     else:
-        print("❌ 모든 필수 단어를 포함한 아이디어가 없습니다.")
-        print("\n📋 부분적으로 조건을 만족하는 아이디어들:")
-        for result in over_score_ideas:
-            print(f"아이디어: {result['idea']}")
-            print(f"점수: {result['score']}, 누락: {result['missing_categories']}")
-    
-    print(f"\n📈 전체 결과: 기준 점수 이상 {len(over_score_ideas)}개, 완전 조건 만족 {len(qualified_ideas)}개")
+        print(" 모든 필수 단어를 포함한 아이디어가 없습니다.")
+        print(f" 기준 점수 이상 아이디어는 {len(over_score_ideas)}개 있습니다.")
