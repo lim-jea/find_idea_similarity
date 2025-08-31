@@ -1,12 +1,68 @@
 import csv
-import numpy
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize 
 from konlpy.tag import Okt
 import pandas as pd
+from mysql.connector import pooling
 
 word_to_index = {}
 bow = []
+
+
+pool=pooling.MySQLConnectionPool(pool_name="pynative_pool",
+                                pool_size=32,
+                                pool_reset_session=True,
+                                host="ls-8afd880ef3938cc6bff7db1f49dfcbcde8311b12.crqrymk8yrjv.ap-northeast-2.rds.amazonaws.com",
+                                user="coalaroot",
+                                password="coaladbpass",
+                                database="CoalaService",
+                                charset="utf8"
+                                )
+def get_connection():
+    return pool.get_connection()
+
+
+def convert_synonym_pattern(syn):
+    syn = syn.replace("%d", r"\d+")
+    syn = syn.replace("%s", r"\S+")
+    syn = syn.replace("%c", r"\S{1}")
+    syn = syn.replace("%Text", r"\b[a-zA-Z]{2,}+")
+    syn = syn.replace(" ", r"[\s\S]{0,10}?")
+    return syn
+
+
+def kw_synonym_check(keyword_list, synonym_dict, ai_lost_key, content, ai_response):
+    for keyword in keyword_list:
+        synonyms = synonym_dict.get(keyword, [])  # 변환된 패턴 생성
+        converted_patterns = [convert_synonym_pattern(syn) for syn in synonyms]
+        pattern = "|".join(converted_patterns)
+
+        has_synonym = bool(re.search(pattern, content))
+
+        if keyword not in ai_lost_key and not has_synonym:
+            ai_lost_key.append(keyword)
+
+        elif keyword in ai_lost_key and has_synonym:
+            ai_lost_key.remove(keyword)
+            if keyword in ai_response["idea_error_object"]:
+                idx = ai_response["idea_error_object"].index(keyword)
+                if ai_response["idea_error_reason"][idx] == "누락":
+                    del ai_response["non_passed_standard"][idx]
+                    del ai_response["idea_error_object"][idx]
+                    del ai_response["idea_error_reason"][idx]
+                    del ai_response["idea_error_detail"][idx]
+                    del ai_response["idea_error_advice"][idx]
+
+    if "" in ai_lost_key:
+        ai_lost_key.remove("")
+
+    if not ai_lost_key:
+        keyword_part = ""
+    elif len(ai_lost_key) == 1:
+        keyword_part = ai_lost_key[0]
+    else:
+        keyword_part = ", ".join(ai_lost_key)
+    print(keyword_part)
+    return ai_response, keyword_part
+
 
 def build_bag_of_words(morphs):
     """BoW 생성"""
@@ -80,6 +136,21 @@ def DTM(csv_path, stopwords_set):
 
     return word_df
 
+def find_over_threshold_words(word_df, idea_df_dict, score_threshold=4, frequency_threshold=20):
+    """특정 점수 이상의 단어 찾기"""
+    filtered_ideas = []
+    for idx, row in idea_df_dict.iterrows():
+        score = 0
+        for morph in row['idea_morphs']:
+            if morph in word_df['word'].values:
+                word_index = word_df[word_df['word'] == morph].index[0]
+                if word_df.at[word_index, 'count'] > frequency_threshold:
+                    score += 1
+        if score > score_threshold:
+            filtered_ideas.append((row['idea'], score))
+            print(" score = ", score, "아이디어: ", row['idea'])
+    return filtered_ideas
+
 if __name__ == "__main__":
     csv_path = r'c:\Users\jeayy\Desktop\NLP\find_idea_similarity\DTM(Document-Term Matrix)\coala_ai_response_30013_ML.csv'
     stopwords_set = load_stopwords()
@@ -99,11 +170,6 @@ if __name__ == "__main__":
     
     idea_df_dict['score'] = 0
     
-    for idx, row in idea_df_dict.iterrows():
-        for morph in row['idea_morphs']:
-            if morph in word_df['word'].values:
-                word_index = word_df[word_df['word'] == morph].index[0]
-                if word_df.at[word_index, 'count'] > 20:
-                    row['score'] += 1
-        if row['score']> 4:
-            print(" score = ", row['score'], "아이디어: ",row['idea'])
+    over_score_ideas=find_over_threshold_words(word_df, idea_df_dict, score_threshold=4, frequency_threshold=30)
+    print("최종 결과: ", over_score_ideas)
+    
