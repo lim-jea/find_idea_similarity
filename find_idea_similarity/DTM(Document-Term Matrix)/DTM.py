@@ -3,10 +3,20 @@ import re  # 추가: 정규표현식 모듈
 from konlpy.tag import Okt
 import pandas as pd
 from mysql.connector import pooling
+from nltk.corpus import wordnet  # 추가
+import nltk  # 추가
+
+# WordNet 데이터 다운로드 (최초 1회만 필요)
+#nltk.download('wordnet')
+#nltk.download('omw-1.4')
 
 word_to_index = {}
 bow = []
 
+
+# 추가: 동의어 매핑을 위한 딕셔너리
+synonym_groups = {}
+representative_words = {}
 
 pool=pooling.MySQLConnectionPool(pool_name="pynative_pool",
                                 pool_size=32,
@@ -65,17 +75,59 @@ def kw_synonym_check(keyword_list, synonym_dict, ai_lost_key, content, ai_respon
     return ai_response, keyword_part
 
 
-def build_bag_of_words(morphs):
-    """BoW 생성"""
-    for word in morphs:  
+# 추가: WordNet 기반 동의어 찾기 함수
+def get_korean_synonyms(word):
+    """WordNet에서 한국어 동의어 찾기"""
+    synonyms = set()
+    for synset in wordnet.synsets(word, lang='kor'):
+        for lemma in synset.lemmas(lang='kor'):
+            if lemma.name() != word:
+                synonyms.add(lemma.name().replace('_', ' '))
+    return list(synonyms)
+
+# 추가: 대표 단어 매핑 함수
+def map_to_representative(word, custom_synonyms=None):
+    """단어를 대표 단어로 매핑"""
+    # 이미 매핑된 경우
+    if word in representative_words:
+        return representative_words[word]
+    
+    # 커스텀 동의어 사전 확인
+    if custom_synonyms:
+        for rep, syns in custom_synonyms.items():
+            if word in syns or word == rep:
+                representative_words[word] = rep
+                return rep
+    
+    # WordNet에서 동의어 찾기
+    synonyms = get_korean_synonyms(word)
+    if synonyms:
+        # 첫 번째 동의어를 대표 단어로 사용
+        rep = synonyms[0] if synonyms else word
+        representative_words[word] = rep
+        if rep not in synonym_groups:
+            synonym_groups[rep] = set()
+        synonym_groups[rep].add(word)
+        synonym_groups[rep].update(synonyms)
+        return rep
+    
+    # 동의어가 없으면 자기 자신이 대표
+    representative_words[word] = word
+    return word
+
+# 수정: build_bag_of_words 함수에 동의어 매핑 추가
+def build_bag_of_words(morphs, use_synonym_mapping=True):
+    """BoW 생성 (동의어 매핑 옵션 추가)"""
+    for word in morphs:
+        # 동의어 매핑 사용 시 대표 단어로 변환
+        if use_synonym_mapping:
+            word = map_to_representative(word, custom_synonyms=essential_words)
+        
         if word not in word_to_index.keys():
-            word_to_index[word] = len(word_to_index)  
-            # 수정: insert 대신 append 사용
+            word_to_index[word] = len(word_to_index)
             bow.append(1)
         else:
-            # 재등장하는 단어의 인덱스
             index = word_to_index.get(word)
-            # 재등장한 단어는 해당하는 인덱스의 위치에 1을 더한다.
             bow[index] = bow[index] + 1
     return word_to_index, bow
 
@@ -97,6 +149,7 @@ def make_idea_morphs(data, stop_words_set):
         filtered_morphs = [morph for morph in morphs if morph not in stop_words_set]
         row['idea_morphs'] = filtered_morphs  # 수정: 컬럼명 오타 수정
     return data
+
 
 def load_stopwords():
     # 파일 경로를 문자열로 전달 (쉼표 제거)
@@ -212,7 +265,9 @@ if __name__ == "__main__":
     idea_df_dict = pd.DataFrame(idea_df_dict) 
     
     word_df = pd.read_csv(r'c:\Users\jeayy\Desktop\NLP\find_idea_similarity\DTM(Document-Term Matrix)\30013_word_frequency_table.csv', encoding='utf-8-sig')
+
     
+    # 동의어 없이 비슷한 단어 처리
     idea_df_dict['score'] = 0
     
     # 필수 단어 확인과 함께 점수 계산
@@ -231,3 +286,9 @@ if __name__ == "__main__":
     else:
         print(" 모든 필수 단어를 포함한 아이디어가 없습니다.")
         print(f" 기준 점수 이상 아이디어는 {len(over_score_ideas)}개 있습니다.")
+        
+    # 대표 단어 통계 출력
+    print("\n=== 대표 단어 빈도 ===")
+    top_words = word_df.nlargest(20, 'count')
+    for _, row in top_words.iterrows():
+        print(f"{row['word']}: {row['count']}회")
