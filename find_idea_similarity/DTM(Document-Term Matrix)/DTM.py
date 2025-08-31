@@ -3,6 +3,7 @@ import numpy
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize 
 from konlpy.tag import Okt
+import pandas as pd
 
 word_to_index = {}
 bow = []
@@ -44,5 +45,18 @@ for row in data:
             morphs.remove(morph)
     row['idea_ morphs'] = morphs
     build_bag_of_words(morphs)
+
 print(word_to_index)
 print(bow)
+
+
+word_df = pd.DataFrame({
+    'word': list(word_to_index.keys()),
+    'index': list(word_to_index.values()),
+    'count': bow
+})
+
+# 저장
+word_df.to_csv(r'c:\Users\jeayy\Desktop\NLP\find_idea_similarity\DTM(Document-Term Matrix)\30013_word_frequency_table.csv', index=False, encoding='utf-8-sig')
+
+print(word_df.head(10))
