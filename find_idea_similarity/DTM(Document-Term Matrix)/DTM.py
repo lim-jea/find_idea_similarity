@@ -5,6 +5,7 @@ import pandas as pd
 from mysql.connector import pooling
 from nltk.corpus import wordnet  # 추가
 import nltk  # 추가
+from math import log # IDF 계산을 위해
 
 # WordNet 데이터 다운로드 (최초 1회만 필요)
 #nltk.download('wordnet')
